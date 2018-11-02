@@ -7,9 +7,9 @@
  *
  * Created by Krzysztof Furmaniak <softlab@poczta.onet.pl>
  * Copyright (C) 2018 SotfLab
- * Full contributor list: https://github.com/mysensors/Arduino/graphs/contributors
+ * Full contributor list: 
  *
- * Documentation: http://www.mysensors.org
+ * Documentation: https://github.com/softlabb/Lab
  * Support Forum: http://forum.mysensors.org
  *
  * This program is free software; you can redistribute it and/or
@@ -19,11 +19,11 @@
  *******************************
  *
  * REVISION HISTORY
- * Version 0.1 - Krzysztof Furmaniak
+ * Version 1.0 - Krzysztof Furmaniak
  * 
  * DESCRIPTION
- * This sketch provides an example how to implement a distance sensor using HC-SR04 
- * http://www.mysensors.org/build/distance
+ * This sketch provides an eatching machine with two heater and temp sensors 
+ * https://github.com/softlabb/Lab
  */
 
 
@@ -50,6 +50,12 @@
 #define YELLOW  0xFFE0
 #define WHITE   0xFFFF
 
+// piny dla Arduino MEGA2560
+#define pinG1		53
+#define pinG2		51
+#define pinLED		49
+#define pinAiR		47
+
 MCUFRIEND_kbv tft;
 
 // ALL Touch panels and wiring is DIFFERENT
@@ -59,18 +65,6 @@ const int XP=6, YM=7, YP=A1,XM=A2; //ID=0x9341
 //const int TS_LEFT = 907, TS_RT = 136, TS_TOP = 942, TS_BOT = 139;
 const int TS_LEFT=270,TS_RT=850,TS_TOP=180,TS_BOT=890;
 
-struct{
-	boolean G2          = false;  // czy istnieje grzałka G2
-	boolean LED         = true;   // czy LED ma być sterowane automatycznie
-	boolean Buz         = true;   // czy Buzzer ma być sterowany automatycznie
-	boolean T2          = false;  // czy istnieje termometr T2
-	boolean AIR         = true;   // czy napowietrzacz ma być sterowany automatycznie
-	int TG2             = 5;      // default=5 <0..10> skok co 1 wartość w stopniach C
-	int AIRRun          = 4;      // default=4 <2..98> skok co 2 wartość w [sek]
-	int AIROf           = 16;     // default=16 <2..98> skok co 2 wartość w [sek]
-	float Td            = 0.1f;   // default=0.1 <0.0..5.0> skok co 0.1 wartość w stopniach C HISTEREZA
-}konfig;
-
 int pixel_x, pixel_y;	//Touch_getXY() updates global vars
 int stan	= STOP;		  // default STAN
 int Tzad	= 40;		    // default temperatura zadana, standardowa temperatura roztworu w śrdku B327
@@ -78,9 +72,29 @@ float T1   = 0.0f;    // aktualna temperatura z T1
 float T2   = 0.0f;    // aktualna temperatura z T2
 float T    = 0.0f;    // aktualna temperatura, albo to samo co T1 lub średnia z T1 i T2
 float lastT = 0.0f;
-int minuta=0, lastminuta=0, sekunda=0, lastsekunda;
+int minutaN=0, sekundaN=0, lastsekunda, minutaT=0, sekundaT=0,;
 char buf4[4];
-bool ss = false, led = false, air = false, menu = false;
+bool ss = false, led = false, air = false, menu = false, czasN=true, czasT=false;
+
+struct{
+	bool G2          = false;  // czy istnieje grzałka G2
+	bool LED         = true;   // czy LED ma być sterowane automatycznie
+	bool Buz         = true;   // czy Buzzer ma być sterowany automatycznie
+	bool T2          = false;  // czy istnieje termometr T2
+	bool AIR         = true;   // czy napowietrzacz ma być sterowany automatycznie
+	int TG2             = 5;      // default=5 <0..10> skok co 1 wartość w stopniach C
+	int AIRRun          = 4;      // default=4 <2..98> skok co 2 wartość w [sek]
+	int AIROf           = 16;     // default=16 <2..98> skok co 2 wartość w [sek]
+	float Td            = 0.1f;   // default=0.1 <0.0..5.0> skok co 0.1 wartość w stopniach C HISTEREZA
+}konfig;
+
+struct
+{
+	boolean G1			= false;	// czy grzałka G1 jest ON/OFF
+	boolean G2			= false;
+	boolean LED			= false;
+	boolean AiR			= false;
+}module;
 
 TouchScreen ts = TouchScreen(XP, YP, XM, YM, 500);
 
@@ -101,7 +115,8 @@ bool Touch_getXY(void)
     digitalWrite(YP, HIGH);   //because TFT control pins
     digitalWrite(XM, HIGH);
     bool pressed = (p.z > MINPRESSURE && p.z < MAXPRESSURE);
-    if (pressed) {
+    if (pressed) 
+	{
         //pixel_x = map(p.x, TS_LEFT, TS_RT, 0, tft.width()); //.kbv makes sense to me
         //pixel_y = map(p.y, TS_TOP, TS_BOT, 0, tft.height());
         pixel_x = map(p.x, TS_BOT, TS_TOP, 0, tft.width());
@@ -112,31 +127,45 @@ bool Touch_getXY(void)
 
 void czasISR()
 {
-  if(stan==TRAWIENIE)
-  {
-    sekunda+=1;
-    if(sekunda>59)
-    {
-      sekunda=0;
-      minuta+=1;
-    }    
-  }
+	if(stan==TRAWIENIE)
+	{
+		if(czasN)
+		{
+			sekundaN+=1;
+			if(sekundaN>59)
+			{
+				sekundaN=0;
+				minutaN+=1;
+			}   			
+		}
+		if(czasT)
+		{
+			sekundaT+=1;
+			if(sekundaT>59)
+			{
+				sekundaT=0;
+				minutaT+=1;
+			}   			
+		}
+		
+	}
 }
 
 void tempISR()
 {
-  // pobierz temp z T1
-  T1+=2.0;
-  if(konfig.T2)
-  {
-    // pobierz temp z T2
-    T2=24.0;
-    T = (T1+T2)/2;
-  }
-  else
-    T = T1;
-  if(T1>46)
-    T1=0;
+	// DANE TESTOWE
+	// pobierz temp z T1
+	T1+=2.0;
+	if(konfig.T2)
+	{
+		// pobierz temp z T2
+		T2=24.0;
+		T = (T1+T2)/2;
+	}
+	else
+		T = T1;
+	
+	if(T1>46) T1=26;
 }
 
 void main_scr()
@@ -178,26 +207,26 @@ void main_scr()
 	tft.setTextColor(RED);
 	tft.setCursor(40, 175);
 	tft.setTextSize(3);
-  dtostrf(T, 1, 1, buf4);
+	dtostrf(T, 1, 1, buf4);
 	tft.print(buf4);
 
 	tft.setTextColor(WHITE);
 	tft.setCursor(140, 175);
 	tft.setTextSize(1);
 	tft.print("T2: ");
-  if(konfig.T2)
-  {
-    dtostrf(T2, 1, 1, buf4);
-    tft.print(buf4);
-  }
-  else
-    tft.print("-");
+	
+	if(konfig.T2)
+	{
+		dtostrf(T2, 1, 1, buf4);
+		tft.print(buf4);
+	}
+	else
+		tft.print("-");
     
 	tft.setCursor(140, 190);
 	tft.print("T1: ");
-  dtostrf(T1, 1, 1, buf4);
-  tft.print(buf4);
-
+	dtostrf(T1, 1, 1, buf4);
+	tft.print(buf4);
 }
 
 void menu_scr()
@@ -221,24 +250,24 @@ void menu_scr()
 	mtg2minus_btn.initButton(&tft, 180, 40, 20, 20, WHITE, CYAN, BLACK, "-", 1);
 
 	if(konfig.LED)
-	mled_btn.initButton(&tft, 160, 65, 60, 20, WHITE, GREEN, BLACK, "LED ON", 1);
+		mled_btn.initButton(&tft, 160, 65, 60, 20, WHITE, GREEN, BLACK, "LED ON", 1);
 	else
-	mled_btn.initButton(&tft, 160, 65, 60, 20, WHITE, BLACK, WHITE, "LED OFF", 1);
+		mled_btn.initButton(&tft, 160, 65, 60, 20, WHITE, BLACK, WHITE, "LED OFF", 1);
 	
 	if(konfig.Buz)
-	mbuz_btn.initButton(&tft, 45, 65, 60, 20, WHITE, GREEN, BLACK, "Buzz ON", 1);
+		mbuz_btn.initButton(&tft, 45, 65, 60, 20, WHITE, GREEN, BLACK, "Buzz ON", 1);
 	else
-	mbuz_btn.initButton(&tft, 45, 65, 60, 20, WHITE, BLACK, WHITE, "Buzz OFF", 1);
+		mbuz_btn.initButton(&tft, 45, 65, 60, 20, WHITE, BLACK, WHITE, "Buzz OFF", 1);
 	
 	if(konfig.T2)
-	mt2_btn.initButton(&tft, 45, 90, 60, 20, WHITE, GREEN, BLACK, "T2 ON", 1);
+		mt2_btn.initButton(&tft, 45, 90, 60, 20, WHITE, GREEN, BLACK, "T2 ON", 1);
 	else
-	mt2_btn.initButton(&tft, 45, 90, 60, 20, WHITE, BLACK, WHITE, "T2 OFF", 1);
+		mt2_btn.initButton(&tft, 45, 90, 60, 20, WHITE, BLACK, WHITE, "T2 OFF", 1);
 
 	if(konfig.AIR)
-	mair_btn.initButton(&tft, 160, 90, 60, 20, WHITE, GREEN, BLACK, "AiR ON", 1);
+		mair_btn.initButton(&tft, 160, 90, 60, 20, WHITE, GREEN, BLACK, "AiR ON", 1);
 	else
-	mair_btn.initButton(&tft, 160, 90, 60, 20, WHITE, BLACK, WHITE, "AiR OFF", 1);
+		mair_btn.initButton(&tft, 160, 90, 60, 20, WHITE, BLACK, WHITE, "AiR OFF", 1);
 
 	tft.setCursor(15, 115);
 	tft.print("AiR Run [sek]: 4");
@@ -272,74 +301,150 @@ void menu_scr()
 
 	mtdminus_btn.drawButton(false);
 	mtdplus_btn.drawButton(false);
-
 }
 
 void menu_foot()
 {
-  if(stan==TRAWIENIE)
-	  if(sekunda!=lastsekunda)
-	  {
-		  tft.fillRect(0, tft.height()-20, tft.width(), 20, RED);
-		  tft.setTextColor(WHITE);
-		  tft.setCursor(0, tft.height()-18);
-		  tft.setTextSize(2);
+	if(stan==TRAWIENIE)
+	{
+		if(sekundaN!=lastsekunda && czasN)
+		{
+			tft.setTextColor(WHITE);
+			tft.setCursor(0, tft.height()-18);
+			tft.setTextSize(2);
     
-      tft.print("N ");
-		  tft.print(minuta, DEC);
-		  tft.print(":");
-		  if(sekunda<10)
-		    tft.print("0");
-		  tft.print(sekunda, DEC);
-		  lastsekunda=sekunda;
-	  }
-  if(stan==STOP)
-      tft.fillRect(0, tft.height()-20, tft.width(), 20, BLACK);      
+			tft.print("N ");
+			tft.print(minutaN, DEC);
+			tft.print(":");
+			
+			if(sekundaN<10)
+				tft.print("0");
+			tft.print(sekundaN, DEC);				
+			
+			lastsekunda=sekundaN;
+		}	
+			
+		if(sekundaT!=lastsekunda && czasT)
+		{		
+			//czas trawienia
+			tft.setCursor(10, tft.height()-18);
+			tft.print("T ");
+			tft.print(minutaT, DEC);
+			tft.print(":");
+			if(sekundaN<10)
+				tft.print("0");
+			tft.print(sekundaT, DEC);	
+			
+			lastsekunda=sekundaT;
+		}			
+	}
+	
+	if(stan==STOP)
+		tft.fillRect(0, tft.height()-20, tft.width(), 20, BLACK);      
 }
 
 void menu_temp()
 {
-  if(lastT!=T)
-  {
-    lastT=T;
-    tft.fillRoundRect(16, 166, 108, 38, 5, BLACK);
-    //tft.drawRoundRect(15, 165, 110, 40, 5, WHITE);
-    if(T>=Tzad)
-      tft.setTextColor(GREEN);
-    else
-      tft.setTextColor(RED);
-    tft.setCursor(40, 175);
-    tft.setTextSize(3);
-    dtostrf(T, 1, 1, buf4);
-    tft.print(buf4);
-
-    tft.fillRect(160, 175, 40, 10, BLACK);
-    tft.setTextColor(WHITE);
-    tft.setCursor(140, 175);
-    tft.setTextSize(1);
-    tft.print("T2: ");
-    if(konfig.T2)
-    {
-      dtostrf(T2, 1, 1, buf4);
-      tft.print(buf4);
-    }
-    else
-      tft.print("-");
+	if(lastT!=T)
+	{
+		lastT=T;
+		tft.fillRoundRect(16, 166, 108, 38, 5, BLACK);
+		//tft.drawRoundRect(15, 165, 110, 40, 5, WHITE);
+		
+		if(T>=Tzad)
+			tft.setTextColor(GREEN);
+		else
+			tft.setTextColor(RED);
     
-    tft.fillRect(160, 190, 40, 10, BLACK);
-    tft.setCursor(140, 190);
-    tft.print("T1: ");
-    dtostrf(T1, 1, 1, buf4);
-    tft.print(buf4);
-    // wyswietli nowe wartosci temperatur T1 T2(jak jest) oraz T
-  }
+		tft.setCursor(40, 175);
+		tft.setTextSize(3);
+		dtostrf(T, 1, 1, buf4);
+		tft.print(buf4);
+
+		tft.fillRect(160, 175, 40, 10, BLACK);
+		tft.setTextColor(WHITE);
+		tft.setCursor(140, 175);
+		tft.setTextSize(1);
+		tft.print("T2: ");
+		
+		if(konfig.T2)
+		{
+			dtostrf(T2, 1, 1, buf4);
+			tft.print(buf4);
+		}
+		else
+			tft.print("-");
+    
+		tft.fillRect(160, 190, 40, 10, BLACK);
+		tft.setCursor(140, 190);
+		tft.print("T1: ");
+		dtostrf(T1, 1, 1, buf4);
+		tft.print(buf4);
+		// wyswietli nowe wartosci temperatur T1 T2(jak jest) oraz T
+	}
 }
 
+void histereza()
+{
+	if(T>=Tzad)
+	{
+		if(module.G1)
+		{
+			digitalWrite(pinG1, LOW);
+			module.G1=false;
+			tft.fillCircle(25, 30, 8, BLACK);
+			tft.drawCircle(25, 30, 8, WHITE);
+			czasN=false;	//zatrzymujemy czas nagrzewania
+			czasT=true;
+			// można uruchomić czas zliczający trawienie, zliczanie następuje do naciśnięcia buttona STOP
+		}
+	}
+	else
+	{
+		if(T<Tzad-Td)
+		{
+			digitalWrite(pinG1, HIGH);
+			module.G1=true;
+			tft.fillCircle(25, 30, 8, GREEN);	//G1
+
+			if(T<Tzad-TG2)
+			{
+				if(konfig.G2)
+				{
+					digitalWrite(pinG2, HIGH); 
+					module.G2=true;
+					tft.fillCircle(70, 30, 8, GREEN);	//G2
+				}
+			}
+			else
+			{
+				if(module.G2)
+				{
+					digitalWrite(pinG2, LOW);
+					module.G2=false;
+					tft.fillCircle(70, 30, 8, BLACK);	//G2
+					tft.drawCircle(70, 30, 8, WHITE);
+				}
+			}
+		}
+	}
+		
+}
 
 void setup(void)
 {
     uint16_t ID = tft.readID();
     
+	pinMode(pinG1, OUTPUT);
+	pinMode(pinG2, OUTPUT);
+	pinMode(pinLED, OUTPUT);
+	pinMode(pinAiR, OUTPUT);
+	
+	digitalWrite(pinG1, LOW);	// sprawdzić jak być powinno czy LOW oznacza wyłączony czy odwrotnie
+	digitalWrite(pinG2, LOW);
+	digitalWrite(pinLED, LOW);
+	digitalWrite(pinAiR, LOW);
+	
     if (ID == 0xD3D3) ID = 0x9486; // write-only shield
     tft.begin(ID);
     tft.setRotation(3);            //PORTRAIT
@@ -373,61 +478,75 @@ void loop(void)
     // stan STOP / DEFAULT
     //
     if(stan==STOP)
-	  {
-		  ss_btn.press(down && ss_btn.contains(pixel_x, pixel_y));
-		  air_btn.press(down && air_btn.contains(pixel_x, pixel_y));
-		  led_btn.press(down && led_btn.contains(pixel_x, pixel_y));
-		  menu_btn.press(down && menu_btn.contains(pixel_x, pixel_y));
-		  plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
-		  minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
+	{
+		ss_btn.press(down && ss_btn.contains(pixel_x, pixel_y));
+		air_btn.press(down && air_btn.contains(pixel_x, pixel_y));
+		led_btn.press(down && led_btn.contains(pixel_x, pixel_y));
+		menu_btn.press(down && menu_btn.contains(pixel_x, pixel_y));
+		plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
+		minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
 
 		if (ss_btn.justReleased())
 		{
 			ss_btn.initButton(&tft, 263, 20, 100, 40, WHITE, RED, WHITE, "STOP", 2);
-      ss_btn.drawButton();
+			ss_btn.drawButton();
 			stan = TRAWIENIE;
-      minuta=0;
-      sekunda=0;
+			minutaN=0;
+			sekundaN=0;
+			minutaT=0;
+			sekundaT=0;
+			czasN=true;
+			czasT=false;
 			delay(100);     
 		}		
 
-    if (air_btn.justReleased())
-    {
-      if(air)
-      {
-        air_btn.initButton(&tft,  263, 85, 100, 40, WHITE, RED, WHITE, "AiR", 2);
-        tft.fillCircle(120, 30, 8, GREEN);
-        air=false;
-      }
-      else
-      {
-        air_btn.initButton(&tft,  263, 85, 100, 40, WHITE, CYAN, BLACK, "AiR", 2);
-        tft.fillCircle(120, 30, 8, BLACK);
-        tft.drawCircle(120, 30, 8, WHITE);
-        air=true;
-      }
-      air_btn.drawButton();
-      delay(100);
-    }
+		if (air_btn.justReleased())
+		{
+			if(air)
+			{
+				air_btn.initButton(&tft,  263, 85, 100, 40, WHITE, RED, WHITE, "AiR", 2);
+				tft.fillCircle(120, 30, 8, GREEN);
+				air=false;
+				module.AiR=true;
+				digitalWrite(pinAiR, HIGH);
+			}
+			else
+			{
+				air_btn.initButton(&tft,  263, 85, 100, 40, WHITE, CYAN, BLACK, "AiR", 2);
+				tft.fillCircle(120, 30, 8, BLACK);
+				tft.drawCircle(120, 30, 8, WHITE);
+				air=true;
+				module.AiR=false;
+				digitalWrite(pinAiR, LOW);
+			}
+			
+			air_btn.drawButton();
+			delay(100);
+		}
 
-    if (led_btn.justReleased())
-    {
-      if(led)
-      {
-        led_btn.initButton(&tft, 263, 135, 100, 40, WHITE, RED, WHITE, "LED", 2);
-        tft.fillCircle(170, 30, 8, GREEN);
-        led=false;
-      }
-      else
-      {
-        led_btn.initButton(&tft, 263, 135, 100, 40, WHITE, CYAN, BLACK, "LED", 2);
-        tft.fillCircle(170, 30, 8, BLACK);
-        tft.drawCircle(170, 30, 8, WHITE);
-        led=true;
-      }
-      led_btn.drawButton();
-      delay(100);
-    }
+		if (led_btn.justReleased())
+		{
+			if(led)
+			{
+				led_btn.initButton(&tft, 263, 135, 100, 40, WHITE, RED, WHITE, "LED", 2);
+				tft.fillCircle(170, 30, 8, GREEN);
+				led=false;
+				module.LED=true;
+				digitalWrite(pinLED, HIGH);				
+			}
+			else
+			{
+				led_btn.initButton(&tft, 263, 135, 100, 40, WHITE, CYAN, BLACK, "LED", 2);
+				tft.fillCircle(170, 30, 8, BLACK);
+				tft.drawCircle(170, 30, 8, WHITE);
+				led=true;
+				module.LED=false;
+				digitalWrite(pinLED, LOW);				
+			}
+			
+			led_btn.drawButton();
+			delay(100);
+		}
     
 		if (plus_btn.justReleased())
 		{
@@ -437,7 +556,6 @@ void loop(void)
 			tft.setTextColor(GREEN);
 			tft.setCursor(50, 90);
 			tft.setTextSize(4);
-			//tft.print("40");
 			tft.print(Tzad, DEC);
 			delay(100);
 		}
@@ -465,32 +583,44 @@ void loop(void)
 			menu_scr();
 		}
 
-   menu_temp();
+		menu_temp();
 	}
     
-	//**********************************************************************************
-    // stan TRAWIENIE
-    //	
-    if(stan==TRAWIENIE)
-    {
-		  ss_btn.press(down && ss_btn.contains(pixel_x, pixel_y));
-		  air_btn.press(down && air_btn.contains(pixel_x, pixel_y));
-		  led_btn.press(down && led_btn.contains(pixel_x, pixel_y));
-		  plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
-		  minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
+		//**********************************************************************************
+		// stan TRAWIENIE
+		//	
+	if(stan==TRAWIENIE)
+	{
+		ss_btn.press(down && ss_btn.contains(pixel_x, pixel_y));
+		air_btn.press(down && air_btn.contains(pixel_x, pixel_y));
+		led_btn.press(down && led_btn.contains(pixel_x, pixel_y));
+		plus_btn.press(down && plus_btn.contains(pixel_x, pixel_y));
+		minus_btn.press(down && minus_btn.contains(pixel_x, pixel_y));
 
-		  if(ss_btn.justReleased())
-		  {
-			  ss_btn.initButton(&tft, 263, 20, 100, 40, WHITE, CYAN, BLACK, "START", 2);          
-			  ss_btn.drawButton();
-			  delay(100);
-			  stan=STOP;
-			  minuta=0;
-			  sekunda=0;
+		if(ss_btn.justReleased())
+		{
+			ss_btn.initButton(&tft, 263, 20, 100, 40, WHITE, CYAN, BLACK, "START", 2);          
+			ss_btn.drawButton();
+			delay(100);
+			stan=STOP;
+			minutaN=0;
+			sekundaN=0;
+			czasN=true;
+			czasT=false;
+			
+			digitalWrite(pinG1, LOW);
+			digitalWrite(pinG2, LOW);
+			module.G1=false;
+			module.G2=false;
+			
+			tft.fillCircle(25, 30, 8, BLACK);	//G1
+			tft.drawCircle(25, 30, 8, WHITE); 	//G1
+			tft.fillCircle(70, 30, 8, BLACK);	//G2
+			tft.drawCircle(70, 30, 8, WHITE);	//G2
 
-			  //tft.fillRect(0, tft.height()-20, tft.width(), 20, GREEN);
-			  //ss_btn.drawButton();
-      }
+			//tft.fillRect(0, tft.height()-20, tft.width(), 20, GREEN);
+			//ss_btn.drawButton();
+		}
       		
 		if (air_btn.justReleased())
 		{
@@ -499,6 +629,8 @@ void loop(void)
 				air_btn.initButton(&tft,  263, 85, 100, 40, WHITE, RED, WHITE, "AiR", 2);
 				tft.fillCircle(120, 30, 8, GREEN);
 				air=false;
+				module.AiR=true;
+				digitalWrite(pinAiR, HIGH);				
 			}
 			else
 			{
@@ -506,6 +638,8 @@ void loop(void)
 				tft.fillCircle(120, 30, 8, BLACK);
 				tft.drawCircle(120, 30, 8, WHITE);
 				air=true;
+				module.AiR=false;
+				digitalWrite(pinAiR, LOW);				
 			}
 			air_btn.drawButton();
 			delay(100);
@@ -518,6 +652,8 @@ void loop(void)
 				led_btn.initButton(&tft, 263, 135, 100, 40, WHITE, RED, WHITE, "LED", 2);
 				tft.fillCircle(170, 30, 8, GREEN);
 				led=false;
+				module.LED=true;
+				digitalWrite(pinLED, HIGH);				
 			}
 			else
 			{
@@ -525,39 +661,40 @@ void loop(void)
 				tft.fillCircle(170, 30, 8, BLACK);
 				tft.drawCircle(170, 30, 8, WHITE);
 				led=true;
+				module.LED=false;
+				digitalWrite(pinLED, LOW);				
 			}
 			led_btn.drawButton();
 			delay(100);
 		}
 
-    if (plus_btn.justReleased())
-    {
-      Tzad+=1;
-      if(Tzad>50) Tzad=50;
-      tft.fillRoundRect(16, 66, 108, 78, 5, BLACK);
-      tft.setTextColor(GREEN);
-      tft.setCursor(50, 90);
-      tft.setTextSize(4);
-      //tft.print("40");
-      tft.print(Tzad, DEC);
-      delay(100);
-    }
+		if (plus_btn.justReleased())
+		{
+			Tzad+=1;
+			if(Tzad>50) Tzad=50;
+			tft.fillRoundRect(16, 66, 108, 78, 5, BLACK);
+			tft.setTextColor(GREEN);
+			tft.setCursor(50, 90);
+			tft.setTextSize(4);
+			tft.print(Tzad, DEC);
+			delay(100);
+		}
 
-    if (minus_btn.justReleased())
-    {
-      Tzad-=1;
-      if(Tzad<30) Tzad=30;
-      tft.fillRoundRect(16, 66, 108, 78, 5, BLACK);
-      tft.setTextColor(GREEN);
-      tft.setCursor(50, 90);
-      tft.setTextSize(4);
-      //tft.print("40");
-      tft.print(Tzad, DEC);
-      delay(100);
-    }
+		if (minus_btn.justReleased())
+		{
+			Tzad-=1;
+			if(Tzad<30) Tzad=30;
+			tft.fillRoundRect(16, 66, 108, 78, 5, BLACK);
+			tft.setTextColor(GREEN);
+			tft.setCursor(50, 90);
+			tft.setTextSize(4);
+			tft.print(Tzad, DEC);
+			delay(100);
+		}
     
-    menu_temp();
+		menu_temp();
 		menu_foot();
+		histereza();
 	}
 
     //**********************************************************************************
